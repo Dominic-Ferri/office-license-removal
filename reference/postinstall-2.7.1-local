@@ -1,0 +1,248 @@
+#!/bin/zsh
+#
+# Microsoft Office for Mac License Removal - postinstall
+# Local fix of Microsoft's 2.7 script (2021-08-28), prepared 2026-10-21.
+#
+# Behaviour kept from 2.7: removes the perpetual/volume license plist, the
+# 2021/2024 vNext perpetual license folder, the Microsoft 365 subscription
+# license files, the Office sign-in keychain items, the "belongs to" address,
+# the per-app first-run flags and the ECS flight cache, then restarts cfprefsd.
+#
+# Fixes vs 2.7:
+#  - `[ x == y ]` is not valid in zsh ("= not found"), so every registry lookup
+#    returned "" and the whole flight-reset block was a silent no-op.
+#  - `KEY_X=($GetNodeVal ...)` expanded an empty variable instead of calling
+#    the function, and GetNodeVal queried a column (parent_id) that the values
+#    table does not have.
+#  - Keychain deletes ran in root's securityd session, where the console user's
+#    login keychain is locked. They now run in the console user's session via
+#    launchctl asuser and repeat until no matching item remains.
+#  - Root's keychain search list is no longer rewritten.
+#  - /bin/logger does not exist on macOS; /usr/bin/logger is used throughout.
+#  - With nobody logged in (MDM at the login window) the per-user steps are
+#    skipped and logged instead of running against /var/root.
+#    Set TARGET_USER=<shortname> in the environment to force a user.
+#  - Paths are quoted; empty registry node ids are guarded.
+
+VERSION="2.7.1-local"
+LOG() { /usr/bin/logger -t OfficeLicenseRemoval "$1"; /bin/echo "$1"; }
+
+LOG "Starting Office for Mac License Removal $VERSION"
+
+## MACHINE-WIDE PATHS
+PERPLICENSE="/Library/Preferences/com.microsoft.office.licensingV2.plist"
+PERPLICENSEBACKUP="/Library/Preferences/com.microsoft.office.licensingV2.Backup"
+VNEXTPERPETUALLICENSEPATH="/Library/Microsoft/Office/Licenses"
+
+## FUNCTIONS
+GetLoggedInUser() {
+    /bin/echo "show State:/Users/ConsoleUser" | /usr/sbin/scutil | /usr/bin/awk '/Name :/&&!/loginwindow/{print $3}'
+}
+
+SetHomeFolder() {
+    HOME=$(/usr/bin/dscl . -read "/Users/$1" NFSHomeDirectory 2>/dev/null | /usr/bin/sed 's/^NFSHomeDirectory: //')
+    if [ -z "$HOME" ] && [ -d "/Users/$1" ]; then
+        HOME="/Users/$1"
+    fi
+}
+
+# Run a command inside the console user's launchd/securityd session.
+AsUser() {
+    /bin/launchctl asuser "$UserUID" /usr/bin/sudo -u "$LoggedInUser" "$@"
+}
+
+SQL() {
+    /usr/bin/sqlite3 "$REGISTRY" "$1" 2>/dev/null
+}
+
+GetNodeId() {
+# Get node_id from the registry; prints "" when the parent or the node is missing.
+    local NAME="$1"
+    local PARENT="$2"
+    if [ -z "$PARENT" ]; then
+        /bin/echo ""
+        return
+    fi
+    SQL "SELECT node_id FROM HKEY_CURRENT_USER WHERE name='$NAME' AND parent_id=$PARENT;"
+}
+
+DeleteValue() {
+# Delete one named value under a node.
+    local NAME="$1"
+    local NODEID="$2"
+    [ -z "$NODEID" ] && return
+    SQL "DELETE FROM HKEY_CURRENT_USER_values WHERE name='$NAME' AND node_id=$NODEID;"
+}
+
+NukeValue() {
+# Delete every value with this name, whatever the node.
+    local NAME="$1"
+    SQL "DELETE FROM HKEY_CURRENT_USER_values WHERE name='$NAME';"
+}
+
+DeleteNode() {
+# Delete all values contained in a node.
+    local NODEID="$1"
+    [ -z "$NODEID" ] && return
+    SQL "DELETE FROM HKEY_CURRENT_USER_values WHERE node_id=$NODEID;"
+}
+
+RemoveFlightData() {
+# Remove the flighting values from one app node.
+    local KEY_APP="$1"
+    [ -z "$KEY_APP" ] && return
+    local V
+    for V in ETag Expires DeferredConfigs ConfigIds; do
+        DeleteValue "$V" "$KEY_APP"
+    done
+}
+
+KcDelete() {
+# Delete every keychain item matching one attribute, in the user's session.
+# $1 = generic|internet, $2 = -s|-l|-G, $3 = value
+    local KIND="$1"
+    local FLAG="$2"
+    local VAL="$3"
+    local N=0
+    while [ "$N" -lt 20 ] && AsUser /usr/bin/security "delete-${KIND}-password" "$FLAG" "$VAL" >/dev/null 2>&1; do
+        N=$((N + 1))
+    done
+    if [ "$N" -gt 0 ]; then
+        LOG "Keychain: removed $N item(s) matching $FLAG '$VAL'"
+    fi
+}
+
+## MAIN
+
+# Forcibly close Office apps if they are running
+/usr/bin/pkill -HUP "Microsoft Word"
+/usr/bin/pkill -HUP "Microsoft Excel"
+/usr/bin/pkill -HUP "Microsoft PowerPoint"
+/usr/bin/pkill -HUP "Microsoft Outlook"
+/usr/bin/pkill -HUP "Microsoft OneNote"
+
+# Remove the Perpetual/Volume License from the computer
+if [ -f "$PERPLICENSE" ]; then
+    /bin/mv -f "$PERPLICENSE" "$PERPLICENSEBACKUP"
+    LOG "Removed $PERPLICENSE (kept as $PERPLICENSEBACKUP)"
+else
+    LOG "Did NOT detect $PERPLICENSE"
+fi
+
+# Remove the 2021/2024 Consumer Perpetual Licence from the computer
+if [ -e "$VNEXTPERPETUALLICENSEPATH" ]; then
+    /bin/rm -rf "$VNEXTPERPETUALLICENSEPATH"
+    LOG "Removed $VNEXTPERPETUALLICENSEPATH"
+else
+    LOG "Did NOT detect $VNEXTPERPETUALLICENSEPATH"
+fi
+
+# Everything below is per-user and needs a console user
+LoggedInUser="${TARGET_USER:-$(GetLoggedInUser)}"
+if [ -z "$LoggedInUser" ] || [ "$LoggedInUser" = "root" ]; then
+    LOG "No console user; skipped per-user license, keychain, preference and flight steps (set TARGET_USER=<shortname> to force)"
+    LOG "Completed Office for Mac License Removal $VERSION"
+    exit 0
+fi
+UserUID=$(/usr/bin/id -u "$LoggedInUser" 2>/dev/null)
+if [ -z "$UserUID" ]; then
+    LOG "User '$LoggedInUser' not found; skipped per-user steps"
+    exit 0
+fi
+SetHomeFolder "$LoggedInUser"
+LOG "Per-user steps for: $LoggedInUser (uid $UserUID); Home Folder: $HOME"
+
+O365PRODUCT="$HOME/Library/Group Containers/UBF8T346G9.Office"
+REGISTRY="$O365PRODUCT/MicrosoftRegistrationDB.reg"
+O365SUBMAIN="$O365PRODUCT/com.microsoft.Office365.plist"
+O365SUBBAK1="$O365PRODUCT/com.microsoft.e0E2OUQxNUY1LTAxOUQtNDQwNS04QkJELTAxQTI5M0JBOTk4O.plist"
+O365SUBBAK2="$O365PRODUCT/e0E2OUQxNUY1LTAxOUQtNDQwNS04QkJELTAxQTI5M0JBOTk4O"
+O365SUBMAINB="$O365PRODUCT/com.microsoft.Office365V2.plist"
+O365SUBBAK1B="$O365PRODUCT/com.microsoft.O4kTOBJ0M5ITQxATLEJkQ40SNwQDNtQUOxATL1YUNxQUO2E0e.plist"
+O365SUBBAK2B="$O365PRODUCT/O4kTOBJ0M5ITQxATLEJkQ40SNwQDNtQUOxATL1YUNxQUO2E0e"
+VNEXTLICENSEPATH="$O365PRODUCT/Licenses"
+
+# Remove the Microsoft 365 Subscription License
+if [ -f "$O365SUBMAIN" ] || [ -f "$O365SUBBAK1" ] || [ -f "$O365SUBBAK2" ] || [ -f "$O365SUBMAINB" ] || [ -f "$O365SUBBAK1B" ] || [ -f "$O365SUBBAK2B" ] || [ -e "$VNEXTLICENSEPATH" ]; then
+    /bin/rm -f "$O365SUBMAIN" "$O365SUBBAK1" "$O365SUBBAK2" "$O365SUBMAINB" "$O365SUBBAK1B" "$O365SUBBAK2B"
+    /bin/rm -rf "$VNEXTLICENSEPATH"
+    LOG "Removed all Microsoft 365 Subscription License files"
+else
+    LOG "Did NOT detect any Microsoft 365 Subscription License file"
+fi
+
+# Remove the Office sign-in keychain items (user session, so the login keychain is unlocked)
+KcDelete generic  -s 'OneAuthAccount'
+KcDelete internet -s 'msoCredentialSchemeADAL'
+KcDelete internet -s 'msoCredentialSchemeLiveId'
+KcDelete generic  -l 'Microsoft Office Identities Settings 2'
+KcDelete generic  -l 'Microsoft Office Identities Settings 3'
+KcDelete generic  -l 'Microsoft Office Identities Cache 2'
+KcDelete generic  -l 'Microsoft Office Identities Cache 3'
+KcDelete generic  -l 'Microsoft Office Ticket Cache'
+KcDelete generic  -l 'com.microsoft.adalcache'
+KcDelete generic  -l 'com.microsoft.OutlookCore.Secret'
+KcDelete generic  -l 'MicrosoftOfficeRMSCredential'
+KcDelete generic  -l 'MSProtection.framework.service'
+KcDelete generic  -l 'com.helpshift.data_com.microsoft.Outlook'
+KcDelete generic  -G 'MSOpenTech.ADAL.1'
+KcDelete generic  -G 'Microsoft Office Data'
+LOG "Keychain pass complete"
+
+# Remove the Belongs To information
+OFFICEPREF="$HOME/Library/Preferences/com.microsoft.office"
+if [ -f "$OFFICEPREF.plist" ]; then
+    AsUser /usr/bin/defaults delete "$OFFICEPREF" OfficeActivationEmailAddress 2>/dev/null
+    AsUser /usr/bin/defaults write "$OFFICEPREF" OfficeAutoSignIn -bool TRUE
+    AsUser /usr/bin/defaults write "$OFFICEPREF" HasUserSeenFREDialog -bool TRUE
+    AsUser /usr/bin/defaults write "$OFFICEPREF" HasUserSeenEnterpriseFREDialog -bool TRUE
+    LOG "Cleared OfficeActivationEmailAddress"
+fi
+
+# Reset the first run experience for each licensed app
+for APP in com.microsoft.Word com.microsoft.Excel com.microsoft.Powerpoint com.microsoft.Outlook com.microsoft.onenote.mac; do
+    APPPREF="$HOME/Library/Containers/$APP/Data/Library/Preferences/$APP"
+    if [ -f "$APPPREF.plist" ]; then
+        AsUser /usr/bin/defaults write "$APPPREF" kSubUIAppCompletedFirstRunSetup1507 -bool FALSE
+    fi
+done
+LOG "Set apps back to first run state"
+
+# Remove the current flights from the registry
+if [ -e "$REGISTRY" ]; then
+    KEY_SOFTWARE=$(GetNodeId "Software" '-1')
+    KEY_MICROSOFT=$(GetNodeId "Microsoft" "$KEY_SOFTWARE")
+    KEY_OFFICE=$(GetNodeId "Office" "$KEY_MICROSOFT")
+    KEY_VERSION=$(GetNodeId "16.0" "$KEY_OFFICE")
+    KEY_COMMON=$(GetNodeId "Common" "$KEY_VERSION")
+    KEY_ECS=$(GetNodeId "ExperimentEcs" "$KEY_COMMON")
+    KEY_EX_CONFIGS=$(GetNodeId "ExperimentConfigs" "$KEY_COMMON")
+    KEY_EX_ECS=$(GetNodeId "Ecs" "$KEY_EX_CONFIGS")
+
+    for APP in word excel powerpoint outlook onenote licensingdaemon; do
+        KEY_APP=$(GetNodeId "$APP" "$KEY_ECS")
+        KEY_APP_FLIGHTS=$(GetNodeId "Flights" "$KEY_APP")
+        KEY_EX_APP=$(GetNodeId "$APP" "$KEY_EX_ECS")
+        KEY_EX_APP_CCD=$(GetNodeId "ConfigContextData" "$KEY_EX_APP")
+        RemoveFlightData "$KEY_APP"
+        RemoveFlightData "$KEY_EX_APP"
+        DeleteNode "$KEY_APP_FLIGHTS"
+        DeleteNode "$KEY_EX_APP_CCD"
+    done
+
+    # Forcibly remove any Config Service Caching
+    NukeValue "AuthorityUrl"
+    NukeValue "FilePath"
+    NukeValue "Url"
+    LOG "Removed all Office flighting data"
+else
+    LOG "Did NOT detect $REGISTRY; skipped flight reset"
+fi
+
+# Restart the CFPreferences daemon to ensure that all caches are flushed
+/usr/bin/killall cfprefsd
+LOG "Terminated all instances of cfprefsd"
+
+LOG "Completed Office for Mac License Removal $VERSION"
+
+exit 0

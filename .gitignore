@@ -1,0 +1,11 @@
+# Build output (scripts/build-app.sh rebuilds dist/ from source)
+/target/
+/dist/office-license-removal
+/dist/Office License Removal.app/
+
+# Local backups taken before edits
+/Archive/
+
+# Editor and macOS noise
+.DS_Store
+*.bak.*

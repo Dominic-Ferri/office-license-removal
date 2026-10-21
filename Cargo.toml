@@ -1,0 +1,23 @@
+[package]
+name = "office-license-removal"
+version = "0.1.0"
+edition = "2021"
+description = "Removes Microsoft Office for Mac license, sign-in and flight data (replacement for Microsoft's License Removal Tool 2.7 postinstall)"
+publish = false
+
+[workspace]
+members = ["app"]
+
+[[bin]]
+name = "office-license-removal"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = true

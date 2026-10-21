@@ -1,0 +1,18 @@
+[package]
+name = "office-license-removal-app"
+version = "0.1.0"
+edition = "2021"
+description = "Native macOS window for the office-license-removal CLI"
+publish = false
+
+[[bin]]
+name = "OfficeLicenseRemoval"
+path = "src/main.rs"
+
+[dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+# Already linked through objc2-app-kit; listed only to switch on CALayer's
+# background-colour and corner-radius setters.
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "objc2-core-foundation", "objc2-core-graphics"] }
