@@ -2,44 +2,47 @@
 
 ## 0.1.0 (2026-10-21)
 
-First release. A Rust replacement for the postinstall script in Microsoft's "Office for Mac License Removal Tool 2.7". It ships with a native macOS app and a terminal UI around the same command-line tool.
+This is the first release of a Rust replacement for the postinstall script in Microsoft's "Office for Mac License Removal Tool 2.7". It includes a native macOS app and a terminal UI around the same command-line tool.
 
 ### Why
 
-Two faults in the 2.7 script made parts of it fail silently:
+Two faults in the 2.7 script made parts of it fail without an error:
 
-- Its flight reset never ran. The script is zsh, and zsh rejects `[ x == y ]`, so every registry lookup returned an empty string and every SQL statement failed.
-- Its keychain deletes ran in root's securityd session, where the user's login keychain is locked, so the sign-in items stayed behind.
+- Its flight reset never ran. The script is zsh, and zsh rejects `[ x == y ]`. So every registry lookup returned an empty string, and every SQL statement failed.
+- Its keychain deletes ran in the securityd session of root. The login keychain of the user stays locked in that session. So the sign-in items remained in the keychain.
 
 ### Command-line tool (`office-license-removal`)
 
 - `scan` reports which license files, keychain items, flight rows and preference files exist. It changes nothing and never reads keychain passwords.
-- `remove` performs the removal. It renames the perpetual license plist to `.Backup` (or `.Backup.<timestamp>` when one exists) and deletes the Office 2021/2024 perpetual folder. It deletes the Microsoft 365 subscription files, the `Licenses` folder and 15 Office keychain items. It clears the "belongs to" preferences and the per-app first-run flags, deletes the ECS flight rows in `MicrosoftRegistrationDB.reg`, and restarts cfprefsd.
-- Keychain and `defaults` commands run inside the user's own session (`launchctl asuser … sudo -u`), so the login keychain is unlocked. Each keychain delete repeats until no item matches. Exit 44 from `security` means "not found". Any other failure is reported and fails the run.
+- `remove` renames the perpetual license plist to `.Backup` (or `.Backup.<timestamp>` when one exists). It deletes the Office 2021/2024 perpetual folder, the Microsoft 365 subscription files, the `Licenses` folder and 15 Office keychain items. It clears the "belongs to" preferences and the per-app first-run flags. It deletes the ECS flight rows in `MicrosoftRegistrationDB.reg` and restarts cfprefsd.
+- Keychain and `defaults` commands run in the session of the user (`launchctl asuser … sudo -u`). The login keychain stays unlocked in that session.
+- Each keychain delete repeats until no item matches. Exit 44 from `security` means "not found". Any other failure appears in the output and makes the run fail.
 - Registry edits use parameterised SQL in one immediate transaction.
 - A path guard protects every delete, rename, registry open and preference write. It refuses empty paths, `/`, `..`, anything outside the resolved home or system root, and any symlinked folder on the way to the target.
-- A path the tool cannot inspect (for example, permission denied) is reported as an error, never as absent.
-- An explicit `--user` that cannot be resolved stops the run before any change.
-- Office apps are quit with `pkill -HUP -u <uid>` for the target user only, followed by a 5-second wait.
-- Lab mode (`--home` and `--system-root`) runs against a fixture tree without root for testing.
+- The tool reports a path that it cannot inspect (for example, permission denied) as an error, never as absent.
+- If the tool cannot resolve an explicit `--user`, it stops before any change.
+- The tool quits the Office apps of the target user only, with `pkill -HUP -u <uid>`. Then it waits up to 5 seconds.
+- Lab mode (`--home` and `--system-root`) works on a fixture tree without root, for testing.
 - Exit codes: 0 done, 1 refused or aborted, 2 finished with a failed step.
 
 ### Native app (`Office License Removal.app`)
 
-- Rust + AppKit window. Shows the scan at launch and after every remove. Dark window with a crimson header, gold title and status line, white output on black.
-- `Remove Licenses…` asks for confirmation with a typed `REMOVE`, then elevates through the standard macOS administrator prompt.
-- The elevated shell copies the command-line tool into a root-only temporary folder. It verifies the copy's SHA-256 against the hash taken at confirmation, then runs the copy. A changed binary is refused.
-- Quit and the window close button are disabled while a run is in progress.
-- `--ui-test <dir> [--flow scan|cancel|remove]` drives the real window without a human and writes PNG captures and an events log. The cancel and remove flows require lab mode.
+- A Rust and AppKit window shows the scan at launch and after every remove.
+- The window is dark. It has a crimson header with a gold title and the status line, and white output on black.
+- `Remove Licenses…` asks you to type `REMOVE`. Then it asks for administrator rights through the standard macOS prompt.
+- The elevated shell copies the command-line tool into a root-only temporary folder. It compares the SHA-256 hash of the copy with the hash from the confirmation. Then it runs the copy. The shell refuses a changed binary.
+- While a run is in progress, Quit and the window close button do nothing.
+- `--ui-test <dir> [--flow scan|cancel|remove]` operates the real window without a human. It writes PNG captures and an events log. The cancel and remove flows need lab mode.
 
 ### Terminal UI (`Office License Removal.command`)
 
-- Textual (Python) interface with the same flows, keyboard shortcuts `r`, `x`, `q`, and a typed `REMOVE` confirmation. Opens in a kitty window when kitty is installed.
+- A Textual (Python) interface has the same flows, the keys `r`, `x` and `q`, and a typed `REMOVE` confirmation.
+- It opens in a kitty window if `/Applications/kitty.app` exists.
 - The remove runs under `sudo` in the terminal with the same copy-verify-run protection. Ctrl-C at the password prompt returns to the UI.
 - Python runs in isolated mode (`-I`), so the current folder and `PYTHONPATH` cannot inject modules.
 - `--self-test` checks dependencies. `--smoke` runs a headless cancel and remove against a fixture.
 
 ### Build
 
-- `scripts/build-app.sh` builds the tool and the app for arm64 and x86_64, joins them with `lipo`, assembles the bundle, and ad-hoc signs and verifies it.
+- `scripts/build-app.sh` builds the tool and the app for arm64 and x86_64 and joins them with `lipo`. It assembles the bundle, signs it ad hoc and verifies it.
 - `reference/postinstall-2.7.1-local` is the corrected shell script the tool follows step for step.
