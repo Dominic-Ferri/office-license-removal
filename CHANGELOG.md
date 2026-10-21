@@ -10,6 +10,10 @@
 - `--self-test` stays read-only. When a dependency is missing, it stops and names `--setup-deps`.
 - The launcher never changes the system Python. It stops when the private environment folder exists without a working Python, and it does not replace that folder.
 
+### Build
+
+- `scripts/build-app.sh` signs the app in a staging folder outside the repo and verifies it there, then moves it into `dist/`. iCloud Drive adds Finder attributes to a bundle in a synced folder such as `~/Documents`, and `codesign` refuses such a bundle.
+
 ## 0.1.0 (2026-10-21)
 
 This is the first release of a Rust replacement for the postinstall script in Microsoft's "Office for Mac License Removal Tool 2.7". It includes a native macOS app and a terminal UI around the same command-line tool.

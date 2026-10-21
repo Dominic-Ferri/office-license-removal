@@ -245,8 +245,8 @@ The tests use fixtures under `$TMPDIR` (`olr-unit-*`, `olr-it-*`). The tests kee
 1. Builds the CLI and the app for arm64 and x86_64 in release mode.
 2. Joins each pair with `lipo`.
 3. Writes `Info.plist`.
-4. Signs the bundle ad hoc and verifies it.
-5. Copies the same universal CLI to `dist/office-license-removal`.
+4. Signs the bundle ad hoc in a staging folder outside the repo and verifies it there. iCloud Drive adds Finder attributes to a bundle in a synced folder, and `codesign` refuses such a bundle.
+5. Moves the bundle into `dist/` and copies the same universal CLI to `dist/office-license-removal`.
 
 </details>
 
