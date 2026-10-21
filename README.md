@@ -28,7 +28,6 @@ Office License Removal is a Rust replacement for the postinstall script in Micro
 | --- | --- |
 | macOS 14 or later | The app |
 | Rust with the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets | `scripts/build-app.sh` |
-| Python 3.10 or later (the launcher installs Textual) | The terminal UI |
 
 1. Build the app and the command-line tool. The script writes both to `dist/`.
 
@@ -68,7 +67,7 @@ Three front ends share one command-line tool (CLI).
 | Front end | File | Source |
 | --- | --- | --- |
 | Native app (Rust and AppKit) | `dist/Office License Removal.app` | Crate `app/` |
-| Terminal UI (Python and Textual) | `dist/Office License Removal.command` | The launcher file |
+| Terminal UI (Rust and ratatui) | `dist/Office License Removal.command` | `src/tui.rs`, part of the CLI |
 | Command-line tool | `dist/office-license-removal` | Root crate |
 
 ### App
@@ -126,29 +125,22 @@ The `cancel` and `remove` flows need lab mode (`OLR_LAB_HOME` and `OLR_LAB_SYSTE
 
 ### Terminal UI
 
-`dist/Office License Removal.command` is a terminal UI that opens with a double-click. It uses Textual 8 and runs Python with `-I`. The CLI must be in the same folder.
-
-The launcher looks for a Python environment in this order:
-
-1. The private environment in `~/Library/Application Support/office-license-removal/venv`.
-2. `~/.venv`, if it has Python 3.10 or later and Textual 8.
-3. If neither works, the launcher installs Textual 8.2.8 into the private environment. It creates the environment from the first Python 3.10 or later that it finds. This step needs an internet connection.
-
-The launcher never changes the system Python. To install the dependencies without opening the UI, run the launcher with `--setup-deps`.
+`dist/Office License Removal.command` opens the terminal UI with a double-click. The UI is part of the CLI (`office-license-removal tui`), so it needs no Python and downloads nothing. The CLI must be in the same folder as the launcher.
 
 - If `/Applications/kitty.app` exists, the UI opens in a 100×44 kitty window. If not, it resizes the current terminal.
 - The UI runs `scan --user <you>` at launch and after every remove.
-- The keys are `r` (rescan), `x` (remove) and `q` (quit).
+- The keys are `r` (rescan), `x` (remove) and `q` (quit). The arrow keys, Page Up, Page Down, Home and End scroll the output. You can also click the buttons and scroll with the mouse.
+- Run the UI as yourself. It refuses to start as root.
 
 To remove the licenses from the terminal UI:
 
-1. Press `[X] Remove Licenses…` to open the confirm dialog.
-2. Type `REMOVE` in the field. The text must be exactly `REMOVE`.
-3. Press **Remove**. The UI suspends and runs the remove under `sudo` in the terminal.
+1. Press `x` or click `[X] Remove Licenses…` to open the confirm dialog.
+2. Type `REMOVE` in the field. The text must be exactly `REMOVE`. Return in the field cancels, because Cancel is the default button.
+3. Click **Remove**, or press Tab twice and then Return. The UI suspends and runs the remove under `sudo` in the terminal.
 4. Enter your password. Root copies the CLI into a new root-only folder `/private/tmp/olr.XXXXXX`.
 5. Root checks that the copy has the SHA-256 hash from your confirmation. Then root runs the copy.
 
-If the CLI changed between the confirmation and the run, the UI prints `REFUSED: office-license-removal changed since confirmation`. It then exits 3 and changes nothing. Press Ctrl-C at the password prompt to cancel the run and return to the UI.
+The output of the remove appears in the terminal and then in the UI. If the CLI changed between the confirmation and the run, the UI prints `REFUSED: office-license-removal changed since confirmation`. It then exits 3 and changes nothing. Press Ctrl-C at the password prompt to cancel the run and return to the UI. The UI then reports that nothing was changed.
 
 ### Command line
 
@@ -218,7 +210,7 @@ Every delete, rename, registry open and `defaults` write passes a path guard. A 
 Lab mode runs the tool on a fixture tree without root. Use it to test the tool before you use it on a real Mac.
 
 - **CLI:** give both `--home` and `--system-root`. In lab mode, the CLI does not quit apps, does not touch the keychain and does not restart cfprefsd.
-- **App and terminal UI:** set both `OLR_LAB_HOME` and `OLR_LAB_SYSTEM_ROOT`. The title then ends in `LAB MODE`.
+- **App and terminal UI:** set both `OLR_LAB_HOME` and `OLR_LAB_SYSTEM_ROOT`. The title then ends in `LAB MODE`. The terminal UI also takes `--home` and `--system-root`. If you set only one of the two paths, the terminal UI stops with an error.
 - In lab mode, the app and the terminal UI give `--home "$OLR_LAB_HOME" --system-root "$OLR_LAB_SYSTEM_ROOT"` to `scan` and `remove`. The CLI runs directly without elevation.
 - In lab mode, `scan` still checks the real keychain. It reads item attributes only, never passwords.
 
@@ -235,7 +227,7 @@ cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 scripts/build-app.sh
 ```
 
-The tests use fixtures under `$TMPDIR` (`olr-unit-*`, `olr-it-*`). The tests keep these fixtures on disk and never delete them.
+The tests use fixtures under `$TMPDIR` (`olr-unit-*`, `olr-it-*`, `olr-tui-smoke-*`). The tests keep these fixtures on disk and never delete them.
 
 <details>
 <summary><b>What <code>scripts/build-app.sh</code> does</b></summary>
@@ -257,9 +249,8 @@ The tests use fixtures under `$TMPDIR` (`olr-unit-*`, `olr-it-*`). The tests kee
 
 | Command | What it does | Success line |
 | --- | --- | --- |
-| `"dist/Office License Removal.command" --self-test` | Checks the dependencies only. It installs nothing. | `SELF-TEST OK` |
-| `"dist/Office License Removal.command" --setup-deps` | Installs missing dependencies, then runs the same checks. It does not scan license data. | `SELF-TEST OK` |
-| `"dist/Office License Removal.command" --smoke` | Runs a headless cancel and remove on a kept `$TMPDIR` fixture (`olr-tui-smoke-*`). | `SMOKE OK` |
+| `"dist/Office License Removal.command" --self-test` | Checks that the CLI next to the launcher has the terminal UI. It changes nothing. | `SELF-TEST OK` |
+| `"dist/Office License Removal.command" --smoke` | Runs the UI headless on a kept `$TMPDIR` fixture (`olr-tui-smoke-*`): two cancels, then a remove. `cargo test` runs the same check. | `SMOKE OK` |
 
 </details>
 
@@ -278,7 +269,7 @@ Every automated test runs in lab mode under `$TMPDIR`. The tests do not exercise
 - The `launchctl asuser … sudo -u` keychain and `defaults` commands.
 - `pkill`.
 - The cfprefsd restart.
-- The `osascript` and `sudo` prompts.
+- The `osascript` and `sudo` prompts, and the terminal UI's suspend and resume around `sudo`.
 - The kitty relaunch.
 
 Test these parts on a spare Mac before fleet use.

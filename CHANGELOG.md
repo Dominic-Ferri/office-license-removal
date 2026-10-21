@@ -4,11 +4,14 @@
 
 ### Terminal UI
 
-- The launcher now installs its own dependencies. It uses a private environment in `~/Library/Application Support/office-license-removal/venv`, or `~/.venv` when that has Textual 8. If neither works, it installs Textual 8.2.8 into the private environment. This step needs an internet connection.
-- Before the UI starts, the launcher checks for Python 3.10 or later and checks every import that the UI uses.
-- The new option `--setup-deps` installs the dependencies and exits. It does not scan license data.
-- `--self-test` stays read-only. When a dependency is missing, it stops and names `--setup-deps`.
-- The launcher never changes the system Python. It stops when the private environment folder exists without a working Python, and it does not replace that folder.
+- The terminal UI is now part of the CLI: `office-license-removal tui`. It uses Rust and ratatui. It needs no Python, no Textual and no download. `Office License Removal.command` only starts it.
+- The launcher keeps `--self-test` and `--smoke`. The `--setup-deps` option is gone, because the launcher has nothing to install.
+- The screens, keys, colours and typed `REMOVE` confirmation stay the same. Return in the field still cancels.
+- The output of a remove under `sudo` now also appears in the UI log.
+- The root script prints a start line first. The UI reports "nothing was changed" after a password prompt only when no root code ran.
+- The UI refuses to run as root. It stops with an error when you set only one of the two lab paths, so a partial lab setup never becomes a real remove.
+- Terminals without 24-bit colour get the nearest 256-colour palette.
+- The UI replaces control characters in CLI output, so the output cannot send terminal escape sequences.
 
 ### Build
 

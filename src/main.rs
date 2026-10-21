@@ -4,6 +4,7 @@
 mod guard;
 mod registry;
 mod sys;
+mod tui;
 
 use clap::{Parser, Subcommand};
 use std::ffi::OsString;
@@ -156,6 +157,18 @@ enum Cmd {
         /// Prefix for machine-wide paths (default: /)
         #[arg(long)]
         system_root: Option<PathBuf>,
+    },
+    /// Open the terminal UI: scan, then remove after a typed confirmation (run as yourself)
+    Tui {
+        /// Lab mode: fixture home folder (needs --system-root too)
+        #[arg(long)]
+        home: Option<PathBuf>,
+        /// Lab mode: fixture system root (needs --home too)
+        #[arg(long)]
+        system_root: Option<PathBuf>,
+        /// Run a headless UI test against a new lab fixture in $TMPDIR
+        #[arg(long)]
+        smoke: bool,
     },
 }
 
@@ -842,6 +855,17 @@ fn main() -> ExitCode {
             } else {
                 ExitCode::SUCCESS
             }
+        }
+        Cmd::Tui {
+            home,
+            system_root,
+            smoke,
+        } => {
+            if euid == 0 {
+                eprintln!("error: run the terminal UI as yourself, not as root. It asks for the admin password when it needs it.");
+                return ExitCode::FAILURE;
+            }
+            tui::main(home, system_root, smoke)
         }
     }
 }

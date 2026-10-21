@@ -61,6 +61,11 @@ pub fn uid_of(user: &str) -> Option<u32> {
     parse_uid(&output(Command::new("/usr/bin/id").args(["-u", user]))?)
 }
 
+/// Short name of the user that runs this process (`id -un`).
+pub fn user_name() -> Option<String> {
+    output(Command::new("/usr/bin/id").arg("-un")).map(|s| s.trim().to_owned())
+}
+
 /// Console user from `scutil`, ignoring `loginwindow` (script: GetLoggedInUser).
 pub fn console_user() -> Option<String> {
     let mut child = Command::new("/usr/sbin/scutil")
