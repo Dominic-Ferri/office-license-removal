@@ -341,7 +341,7 @@ impl Controller {
         let iv = self.ivars();
         iv.window.center();
         if iv.ui.is_some() {
-            // A background test instance must not take keystrokes from the owner.
+            // A background test instance must not take keystrokes from the user.
             iv.window.makeKeyWindow();
         } else {
             iv.window.makeKeyAndOrderFront(None);
