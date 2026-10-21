@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (2026-10-21)
+
+### Terminal UI
+
+- The launcher now installs its own dependencies. It uses a private environment in `~/Library/Application Support/office-license-removal/venv`, or `~/.venv` when that has Textual 8. If neither works, it installs Textual 8.2.8 into the private environment. This step needs an internet connection.
+- Before the UI starts, the launcher checks for Python 3.10 or later and checks every import that the UI uses.
+- The new option `--setup-deps` installs the dependencies and exits. It does not scan license data.
+- `--self-test` stays read-only. When a dependency is missing, it stops and names `--setup-deps`.
+- The launcher never changes the system Python. It stops when the private environment folder exists without a working Python, and it does not replace that folder.
+
 ## 0.1.0 (2026-10-21)
 
 This is the first release of a Rust replacement for the postinstall script in Microsoft's "Office for Mac License Removal Tool 2.7". It includes a native macOS app and a terminal UI around the same command-line tool.

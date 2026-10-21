@@ -1,12 +1,14 @@
 #!/bin/zsh
 # Double-click launcher: Textual front-end for office-license-removal.
-# The CLI must sit next to this file. UI runs on ~/.venv/bin/python (Textual 8).
+# The CLI must sit next to this file. Reuse Textual 8 or install it in a private venv.
 #   --self-test  dependency checks only; never touches license data
+#   --setup-deps  prepare dependencies and exit without scanning license data
 #   --smoke      headless UI test against a new lab fixture in $TMPDIR
 
 set -o nounset
 
-PY="$HOME/.venv/bin/python"
+DEPS_ENV="$HOME/Library/Application Support/office-license-removal/venv"
+PY="$DEPS_ENV/bin/python"
 CLI="${0:A:h}/office-license-removal"
 
 die() {
@@ -18,11 +20,51 @@ die() {
   exit 1
 }
 
-[[ -x "$PY" ]] || die "Python venv not found at ~/.venv — run: python3 -m venv ~/.venv && ~/.venv/bin/pip install textual"
-"$PY" -I -c 'import textual' 2>/dev/null || die "Textual not installed in ~/.venv — run: ~/.venv/bin/pip install textual"
 [[ -x "$CLI" ]] || die "office-license-removal not found at $CLI (it must sit next to this .command file)"
 
-if [[ "${1:-}" == "--self-test" ]]; then
+deps_ready() {
+  [[ -x "$1" ]] && "$1" -I -c '
+import sys
+from importlib.metadata import version
+assert sys.version_info >= (3, 10)
+assert version("textual").split(".")[0] == "8"
+from rich.text import Text
+from textual import on, work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.theme import Theme
+from textual.widgets import Button, Footer, Input, Label, RichLog, Static
+' >/dev/null 2>&1
+}
+
+if ! deps_ready "$PY"; then
+  if deps_ready "$HOME/.venv/bin/python"; then
+    PY="$HOME/.venv/bin/python"
+  else
+    [[ "${1:-}" != "--self-test" ]] || die "Dependencies missing. Run this command with --setup-deps to install them."
+    if [[ ! -x "$PY" ]]; then
+      [[ ! -e "$DEPS_ENV" ]] || die "Existing dependency environment is incomplete: $DEPS_ENV. Preserve it before recreating it."
+      base_python=""
+      for candidate in "$HOME/.venv/bin/python" /opt/homebrew/bin/python3 /usr/local/bin/python3 "${commands[python3]:-}" /usr/bin/python3; do
+        [[ -x "$candidate" ]] || continue
+        if "$candidate" -I -c 'import sys, venv; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+          base_python="$candidate"
+          break
+        fi
+      done
+      [[ -n "$base_python" ]] || die "Python 3.10 or newer is required. Install Python, then rerun; the adjacent native .app does not require Python."
+      printf '\n  Creating dependency environment: %s\n' "$DEPS_ENV"
+      "$base_python" -I -m venv "$DEPS_ENV" || die "Could not create the dependency environment."
+    fi
+    printf '\n  Installing Textual and its dependencies (internet required)…\n'
+    "$PY" -I -m pip --isolated --disable-pip-version-check install --timeout 30 --retries 2 'textual==8.2.8' || die "Dependency installation failed. Check your internet connection and rerun --setup-deps."
+    deps_ready "$PY" || die "Installed dependencies failed validation; Python 3.10+ and Textual 8 are required."
+  fi
+fi
+
+if [[ "${1:-}" == "--self-test" || "${1:-}" == "--setup-deps" ]]; then
   GLD='\033[38;2;244;189;71m'; DIM='\033[90m'; RST='\033[0m'
   cli_ver=$("$CLI" --version 2>&1) || die "$CLI --version failed: $cli_ver"
   printf "  ${DIM}›${RST} zsh %s\n" "$ZSH_VERSION"

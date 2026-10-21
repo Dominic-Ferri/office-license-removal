@@ -28,7 +28,7 @@ Office License Removal is a Rust replacement for the postinstall script in Micro
 | --- | --- |
 | macOS 14 or later | The app |
 | Rust with the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets | `scripts/build-app.sh` |
-| A Python virtual environment at `~/.venv` with Textual | The terminal UI |
+| Python 3.10 or later (the launcher installs Textual) | The terminal UI |
 
 1. Build the app and the command-line tool. The script writes both to `dist/`.
 
@@ -68,7 +68,7 @@ Three front ends share one command-line tool (CLI).
 | Front end | File | Source |
 | --- | --- | --- |
 | Native app (Rust and AppKit) | `dist/Office License Removal.app` | Crate `app/` |
-| Terminal UI (Textual, Python in `~/.venv`) | `dist/Office License Removal.command` | The launcher file |
+| Terminal UI (Python and Textual) | `dist/Office License Removal.command` | The launcher file |
 | Command-line tool | `dist/office-license-removal` | Root crate |
 
 ### App
@@ -126,7 +126,15 @@ The `cancel` and `remove` flows need lab mode (`OLR_LAB_HOME` and `OLR_LAB_SYSTE
 
 ### Terminal UI
 
-`dist/Office License Removal.command` is a terminal UI that opens with a double-click. It uses Textual and runs with `~/.venv/bin/python -I`. The CLI must be in the same folder.
+`dist/Office License Removal.command` is a terminal UI that opens with a double-click. It uses Textual 8 and runs Python with `-I`. The CLI must be in the same folder.
+
+The launcher looks for a Python environment in this order:
+
+1. The private environment in `~/Library/Application Support/office-license-removal/venv`.
+2. `~/.venv`, if it has Python 3.10 or later and Textual 8.
+3. If neither works, the launcher installs Textual 8.2.8 into the private environment. It creates the environment from the first Python 3.10 or later that it finds. This step needs an internet connection.
+
+The launcher never changes the system Python. To install the dependencies without opening the UI, run the launcher with `--setup-deps`.
 
 - If `/Applications/kitty.app` exists, the UI opens in a 100×44 kitty window. If not, it resizes the current terminal.
 - The UI runs `scan --user <you>` at launch and after every remove.
@@ -249,7 +257,8 @@ The tests use fixtures under `$TMPDIR` (`olr-unit-*`, `olr-it-*`). The tests kee
 
 | Command | What it does | Success line |
 | --- | --- | --- |
-| `"dist/Office License Removal.command" --self-test` | Checks the dependencies only. | `SELF-TEST OK` |
+| `"dist/Office License Removal.command" --self-test` | Checks the dependencies only. It installs nothing. | `SELF-TEST OK` |
+| `"dist/Office License Removal.command" --setup-deps` | Installs missing dependencies, then runs the same checks. It does not scan license data. | `SELF-TEST OK` |
 | `"dist/Office License Removal.command" --smoke` | Runs a headless cancel and remove on a kept `$TMPDIR` fixture (`olr-tui-smoke-*`). | `SMOKE OK` |
 
 </details>
