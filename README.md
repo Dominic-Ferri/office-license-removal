@@ -14,9 +14,11 @@ Office License Removal is a Rust replacement for the postinstall script in Micro
 
 - [Quick start](#quick-start)
 - [What it fixes](#what-it-fixes)
+- [Numbers](#numbers)
 - [Three ways to run it](#three-ways-to-run-it): [app](#app), [terminal UI](#terminal-ui), [command line](#command-line)
 - [What `remove` changes](#what-remove-changes)
 - [Safety](#safety) and [lab mode](#lab-mode)
+- [Project map](#project-map) and [project layout](#project-layout)
 - [Build and test](#build-and-test)
 - [Signing and quarantine](#signing-and-quarantine)
 - [What the automated tests do not cover](#what-the-automated-tests-do-not-cover)
@@ -60,6 +62,15 @@ Two faults in Microsoft's 2.7 script make parts of it fail without an error.
 | The keychain deletes ran in the securityd session of root. The login keychain of the user stays locked in that session. | The sign-in items remained in the keychain. | It runs the keychain and `defaults` commands in the session of the user (`launchctl asuser … sudo -u`). The login keychain stays unlocked in that session. |
 
 All other steps follow the corrected script in [`reference/postinstall-2.7.1-local`](reference/postinstall-2.7.1-local) step for step. The tool uses the same paths, the same keychain items and the same registry values.
+
+## Numbers
+
+You can check each number in this table with the command beside it, from the root of a clone.
+
+| Metric | Value | How to check | Date |
+| --- | --- | --- | --- |
+| Tests that pass | 25 (0 failed, 0 ignored) | `cargo test --workspace --locked` | 2026-11-26 |
+| Lines of Rust | 3,367 | `git ls-files -z '*.rs' \| xargs -0 awk '1' \| wc -l` | 2026-11-26 |
 
 ## Three ways to run it
 
@@ -227,6 +238,89 @@ Lab mode runs the tool on a fixture tree without root. Use it to test the tool b
 ```
 OLR_LAB_HOME=<fixture>/home OLR_LAB_SYSTEM_ROOT=<fixture>/root "dist/Office License Removal.app/Contents/MacOS/OfficeLicenseRemoval"
 ```
+
+<!-- diagrams:start -->
+## Project map
+
+Office License Removal is one command-line tool with two front ends. src/main.rs runs each step of a scan or a remove. It calls guard.rs to check a path before any change, registry.rs to read and reset the flight rows, and sys.rs to run the macOS tools. The app and the terminal UI make no changes themselves. They run the CLI next to them and show its output.
+
+- Each change to a file, a folder, the registry or a preference goes through guard.rs first.
+- The app runs the CLI as a separate program, so no diagram draws a link from the app to the CLI.
+
+### Architecture
+
+The arrow stands for 4 links: src/main.rs uses guard.rs, registry.rs and sys.rs, and app/src/main.rs uses uitest.rs. The two tooling files are the terminal UI launcher and the build script. The test file is tests/remove_fixture.rs.
+
+```mermaid
+flowchart TD
+  L0["Entry points<br/>2 files"]
+  L1["Tooling<br/>2 files"]
+  L2["Tests<br/>1 file"]
+  L3["Core<br/>4 files"]
+  L0 -->|4| L3
+```
+
+### Dependencies
+
+The main.rs with three links is src/main.rs, the CLI. The main.rs with one link is app/src/main.rs, the native app. It uses uitest.rs for its UI test harness.
+
+```mermaid
+flowchart LR
+  subgraph G0["Entry points"]
+    direction TB
+    N0["main.rs"]
+    N1["main.rs"]
+  end
+  subgraph G1["Core"]
+    direction TB
+    N2["uitest.rs"]
+    N3["guard.rs"]
+    N4["registry.rs"]
+    N5["sys.rs"]
+  end
+  N0 --> N3
+  N0 --> N4
+  N0 --> N5
+  N1 --> N2
+```
+
+### Composition
+
+20 files, 5304 lines.
+
+| Language | Files | Lines |
+|---|---:|---:|
+| Rust | 7 | 3367 |
+| Shell | 2 | 598 |
+| Lockfile | 1 | 561 |
+| Docs | 2 | 443 |
+| Other | 6 | 283 |
+| TOML | 2 | 52 |
+
+### History
+
+app/src/main.rs and the terminal UI launcher are the files that changed most.
+
+6 commits, 2026-10-21.
+
+| Hotspot | Commits | Lines |
+|---|---:|---:|
+| `app/src/main.rs` | 2 | 922 |
+| `dist/Office License Removal.command` | 2 | 520 |
+
+<!-- diagrams:end -->
+
+## Project layout
+
+| Folder | What it holds |
+| --- | --- |
+| `src/` | The CLI: the scan and remove steps, the path guard, the flight reset and the wrappers around the macOS tools |
+| `app/` | The native app crate: the AppKit window and the UI test harness |
+| `dist/` | Build output, and the terminal UI launcher, which must sit next to the CLI |
+| `scripts/` | `build-app.sh`, which builds, bundles and signs the app and the CLI |
+| `tests/` | End-to-end tests of `scan` and `remove` on fixture trees in lab mode |
+| `reference/` | The corrected 2.7 script that the CLI follows step for step |
+| `docs/images/` | The banner and the screenshots |
 
 ## Build and test
 
