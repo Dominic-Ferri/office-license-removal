@@ -3,10 +3,17 @@ name = "office-license-removal"
 version = "0.1.0"
 edition = "2021"
 description = "Removes Microsoft Office for Mac license, sign-in and flight data (replacement for Microsoft's License Removal Tool 2.7 postinstall)"
+repository.workspace = true
+readme = "README.md"
+keywords = ["macos", "microsoft-office", "license-removal", "keychain", "cli"]
+categories = ["command-line-utilities"]
 publish = false
 
 [workspace]
 members = ["app"]
+
+[workspace.package]
+repository = "https://github.com/dominicferri/office-license-removal"
 
 [[bin]]
 name = "office-license-removal"

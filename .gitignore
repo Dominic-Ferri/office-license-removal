@@ -9,3 +9,7 @@
 # Editor and macOS noise
 .DS_Store
 *.bak.*
+
+# Local environment files
+.env
+.env.*

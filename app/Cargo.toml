@@ -3,6 +3,10 @@ name = "office-license-removal-app"
 version = "0.1.0"
 edition = "2021"
 description = "Native macOS window for the office-license-removal CLI"
+repository.workspace = true
+readme = "../README.md"
+keywords = ["macos", "microsoft-office", "appkit", "gui"]
+categories = ["gui", "os::macos-apis"]
 publish = false
 
 [[bin]]
