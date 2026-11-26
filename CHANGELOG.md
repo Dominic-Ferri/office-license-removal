@@ -1,5 +1,12 @@
 # Changelog
 
+## Documentation (2026-11-26)
+
+- The README has a Numbers table. Each row gives the command that checks the number.
+- The README has a project map and a project layout table. The map shows the main parts and which files use each other.
+- `Cargo.toml` and `app/Cargo.toml` name the repository, the README, keywords and categories.
+- `.gitignore` keeps local `.env` files out of git.
+
 ## Unreleased (2026-10-21)
 
 ### Terminal UI
